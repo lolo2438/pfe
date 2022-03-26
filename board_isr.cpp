@@ -2,37 +2,26 @@
 
 void board::limitsw_isr(void)
 {
+    static unsigned m = 0;
+
+    interrupted = true;
+
     for(int i = 0; i < NB_MOTOR; i += 1) {
         if(!limitsw[i].read()){
-
-            switch(i){
-            case 0:
-                dir = DIR_LEFT;
-                break;
-            case 1:
-                dir = DIR_RIGHT;
-                break;
-            case 2:
-                disable_pwm();
-                break;
-            case 3:
-                enable_pwm();
-                break;
-            }
-
-            //disable_motor(i);
+            enable_motor(false, i);
         }
-    }    
+    }
+
+    interrupted = false;
 }
+
 
 void board::rx_isr(void)
 {
-    char buf;
-    printer->read(&buf, sizeof(char));
+    interrupted = true;
 
-    // COMPATIBILITY FOR TESTS
-    //ucmd = (enum UART_CMD)buf;
-    //cmd_valid = true;
+    char buf = 0x00;
+    printer->read(&buf, sizeof(char));
 
     if(!cmd_valid){
         uframe.cmd = (enum UART_CMD)buf;
@@ -55,22 +44,24 @@ void board::rx_isr(void)
         }
         
     } else if(!rx_done) {
-        if(frame_cntr < 4){
-            uframe.data[frame_cntr++] = buf;
-        } else {
-            uframe.crc = buf;
-            rx_done = true;
-        }       
+        if(uframe.data_cnt < 4){
+            uframe.data[uframe.data_cnt++] = buf;
+            if(uframe.data_cnt == 4)
+                rx_done = true;
+        }
     }
+
+    interrupted = false;
 }
+
 
 void board::step_cntr_isr(void)
 {
+    interrupted = true;
     nb_step += 1;
 
-    // Step_limit can be set to 0;
     if(step_limit && nb_step >= step_limit)
-        disable_pwm();
+        enable_pwm(false);
 
-    //Need logit to sync reset
+    interrupted = false;
 }

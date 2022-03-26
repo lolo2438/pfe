@@ -4,35 +4,28 @@
 
 #define BAUD_RATE 9600
 
+/*** === PUBLIC FUNCTIONS === ***/
+
 board::board() :
-    pps(100),
-    is_sleeping(false),
-    ucmd(CMD_NUL),
-    printer(nullptr),
-    reserved_uart(nullptr),
-    cmd_valid(false),
-    rx_done(false),
-    frame_cntr(0),
+    pps(100), nb_step(0), step_limit(0),
+    is_sleeping(false), interrupted(false),
+    printer(nullptr), reserved_uart(nullptr),
+    cmd_valid(false), rx_done(false), ustate(TX),
     uframe{CMD_NUL,0,0,0,0},
-    ustate(TX),
-    uart_data(0),
-    nb_step(0),
-    step_limit(0),
-    step(PIN_STEP),
-    step_cntr(PIN_STEP_COUNTER),
-    sleep_n(PIN_SLEEP, 1),
-    dir(PIN_DIR, DIR_LEFT),
-    rst_n(PIN_RST, 1),
+    step(PIN_STEP), step_cntr(PIN_STEP_COUNTER),
+    sleep_n(PIN_SLEEP, 1), rst_n(PIN_RST, 1),
+    dir(PIN_DIR, DIR_DOWN),
     en_n{{PIN_EN1,1},{PIN_EN2,1},{PIN_EN3,1},{PIN_EN4,1}},
     limitsw{{PIN_LIMITSW1},{PIN_LIMITSW2},{PIN_LIMITSW3},{PIN_LIMITSW4}},
+    motor_pos{},
     led(PIN_LED,0)
 {   
     // Setup PWM
     step.period_us(1000000/(pps*USTEP_RES));
-    step = 0.5;  //Duty cycle of 50
+    step = 0.5;  //Duty cycle of 50%
     is_pwm_enabled = true;
 
-    suspend_motors();
+    //suspend_motors();
     
     // Setup Interrupts
     for(int i = 0; i < NB_MOTOR; i += 1) {
@@ -43,6 +36,111 @@ board::board() :
 
     set_printer_uart_state(RX);
 }
+
+
+board::~board()
+{
+    delete printer;
+    delete reserved_uart;
+}
+
+
+bool board::uart_has_rcv(void)
+{
+    return rx_done;
+}
+
+
+struct uart_frame board::uart_read(void)
+{
+    cmd_valid = false;
+    rx_done = false;
+    
+    uframe = (struct uart_frame){};
+
+    return uframe;
+}
+
+
+int board::uart_send(char c)
+{
+    set_printer_uart_state(TX);
+    c = printer->write(&c, sizeof(char));
+    ThisThread::sleep_for(3ms);
+    set_printer_uart_state(RX);
+
+    return 1;
+}
+
+
+void board::set_motor_pos(unsigned motor, float pos)
+{
+    motor_pos[motor % NB_MOTOR] = pos;
+}
+
+
+enum UART_CMD board::home_motors(void)
+{
+    bool motor_moved = false;
+    
+    const unsigned long STEP_TRESHOLD = 200; // ADJUST ME
+
+    enable_pwm(false);
+    dir = DIR_UP;
+
+    for(unsigned i = 0; i < NB_MOTOR; i += 1){
+        // TODO: calculate the number of steps needed to go to the position
+        step_limit = 100 * USTEP_RES;
+        
+        if(step_limit >= STEP_TRESHOLD){
+            
+            enable_motor(true, i);
+            enable_pwm(true);
+
+            while(is_pwm_enabled){
+                ThisThread::sleep_for(100ms);
+            }
+
+            enable_motor(false, i);
+        } 
+    }
+
+    step_limit = 0;
+
+    return motor_moved ? RESAMPLE : DONE;
+}
+
+
+enum UART_CMD board::reset_motors(void)
+{
+    dir = DIR_DOWN; 
+    enable_all_motors(true);
+    enable_pwm(true);
+
+    while(nb_motors_active()){
+        ThisThread::sleep_for(100ms);
+    }
+
+    enable_all_motors(false);
+
+    // Reset driver
+    rst_n = 0;
+    int last_step_cntr = step_cntr;
+    while(last_step_cntr == step_cntr);
+    
+    rst_n = 1;
+
+    enable_pwm(false);
+
+    for(unsigned i=0; i<NB_MOTOR; i+=1)
+        motor_pos[i] = 0.0f;
+
+    return DONE;
+}
+
+
+/*** === PRIVATE FUNCTIONS === ***/
+
 
 void board::set_printer_uart_state(enum UART_STATE state)
 {
@@ -70,84 +168,36 @@ void board::set_printer_uart_state(enum UART_STATE state)
     ustate = state;
 }
 
-bool board::has_rcv_uart(void)
-{
-    return cmd_valid;
-}
 
-const struct uart_frame& board::read_uart(void)
-{
-    cmd_valid = false;
-    rx_done = false;
-    return uframe;
-}
-
-int board::uart_send(char c)
-{
-    set_printer_uart_state(TX);
-    c = printer->write(&c, sizeof(char));
-    ThisThread::sleep_for(3ms);
-    set_printer_uart_state(RX);
-
-    return 1;
-}
-
-
-void board::enable_all_motors(void)
+void board::enable_all_motors(bool en)
 {
     for(int i = 0; i < NB_MOTOR; i += 1)
-        enable_motor(i);
+        enable_motor(en, i);
 }
 
 
-void board::disable_all_motors(void)
+void board::enable_motor(bool en, unsigned motor)
 {
-    for(int i = 0; i < NB_MOTOR; i += 1)
-        disable_motor(i);
+    en_n[motor % NB_MOTOR] = !en;
 }
 
 
-void board::enable_motor(unsigned motor)
+void board::enable_pwm(bool en)
 {
-    en_n[motor % NB_MOTOR] = 0;
-}
-
-
-void board::disable_motor(unsigned motor)
-{
-    en_n[motor % NB_MOTOR] = 1;
-}
-
-
-void board::disable_pwm(void)
-{
-    if(!is_pwm_enabled)
+    if(is_pwm_enabled == en && !is_sleeping)
         return;
 
-    step.suspend();
-    nb_step = 0;
-    is_pwm_enabled = false;
-}
+    if(en) {
+        if(is_sleeping && !interrupted)
+            wakeup_motors();
 
+        step.resume();
+    } else {
+        step.suspend();
+        nb_step = 0;
+    }
 
-void board::enable_pwm(void)
-{
-    if(is_sleeping || is_pwm_enabled)
-        wakeup_motors();
-     
-    step.resume();
-    is_pwm_enabled = true;
-}
-
-void board::reset_pwm_cntr(void)
-{
-     if(is_pwm_enabled && !is_sleeping) {
-         step = 0;
-         nb_step = 0;
-         step = 0.5;
-     } else {
-         nb_step = 0;
-     }
+    is_pwm_enabled = en;
 }
 
 
@@ -156,8 +206,8 @@ void board::suspend_motors(void)
     if(is_sleeping)
         return;
     
-    disable_all_motors();
-    disable_pwm();
+    enable_all_motors(false);
+    enable_pwm(false);
     
     sleep_n = 0;
     
@@ -181,7 +231,7 @@ void board::wakeup_motors(void)
 
 bool board::is_motor_active(unsigned motor)
 {
-    if(en_n[motor].read() == 0)
+    if(en_n[motor % NB_MOTOR].read() == 0)
         return true;
     else 
         return false;
@@ -198,28 +248,4 @@ unsigned board::nb_motors_active(void)
     }
 
     return nb_active;
-}
-
-
-void board::set_max_step(unsigned long step_limit)
-{
-    this->step_limit = step_limit;
-}
-
-
-void board::reset_position(void)
-{
-    disable_all_motors();
-    enable_pwm();
-
-    rst_n = 0;
-    //wait for rising edge, maybe better way
-    int last_step_cntr = step_cntr;
-    while(last_step_cntr == step_cntr) {
-        ThisThread::sleep_for(1ms);
-    }
-    
-    rst_n = 1;
-
-    disable_pwm();
 }
