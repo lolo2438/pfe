@@ -4,8 +4,6 @@
 #include "mbed.h"
 #include "common.h"
 
-#define NB_MOTOR 4
-#define USTEP_RES 8
 
 class board {
     public:
@@ -158,6 +156,13 @@ class board {
     void enable_pwm(bool en);
 
 
+    /**
+    * @fn set_ustep
+    * @param ustep the microstep resolution
+    */
+    void set_ustep(enum USTEP_VAL ustep);
+
+
     /*** === UART FUNCTIONS === ***/
 
 
@@ -215,12 +220,21 @@ class board {
 
     // Flag that indicates that the uart is done receiving the frame
     bool rx_done;
+
+    // Flag to indicate that the motor position was reseted to default
+    bool motor_reseted;
     
     // The Z position of the motors
     float motor_pos[NB_MOTOR];
 
+    // The target position to reach when comming from a reset
+    float target_pos;
+
     // The number of pulses per second for the PWM
     unsigned int pps;
+
+    // Variable that holds the value of the micro-step that was set
+    float ustep;
 
     // Holds the number of steps executed since the pwm was enabled
     unsigned long nb_step;
@@ -247,6 +261,7 @@ class board {
     DigitalOut          led;
     UnbufferedSerial    *printer;
     DigitalIn           *reserved_uart;
+    DigitalOut          ms1, ms2, ms3;
 };
 
 #endif

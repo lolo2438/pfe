@@ -2,8 +2,6 @@
 
 void board::limitsw_isr(void)
 {
-    static unsigned m = 0;
-
     interrupted = true;
 
     for(int i = 0; i < NB_MOTOR; i += 1) {

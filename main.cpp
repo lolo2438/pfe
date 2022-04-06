@@ -14,7 +14,6 @@ float pos = 0.0f;
 
 int main()
 {
-   // printf("========\n");
     while (true) {
         reply = CMD_NUL;
         while(!b.uart_has_rcv());
@@ -25,7 +24,6 @@ int main()
         case DATA1:
         case DATA2:
         case DATA3:
-            // Verify CRC
             pos = *(reinterpret_cast<float*>(d.data));
             b.set_motor_pos(d.cmd - DATA0, pos);
             //printf("%x\n", *((int*)&pos));
@@ -38,7 +36,7 @@ int main()
             reply = b.reset_motors();
             break;
         default:
-            reply = ERR;
+            reply = d.cmd;
             break;
         }
 
