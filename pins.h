@@ -8,14 +8,6 @@
 #define PIN_LIMITSW3        A2
 #define PIN_LIMITSW4        A3
 
-
-/*
-#define PIN_EN1             D6
-#define PIN_EN2             D11 
-#define PIN_EN3             D12
-#define PIN_EN4             D2
-*/
-
 #define PIN_EN1             D6
 #define PIN_EN2             D12
 #define PIN_EN3             D2

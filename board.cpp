@@ -19,15 +19,14 @@ board::board() :
     motor_pos{}, motor_reseted(false), target_pos(0.0f),
     led(PIN_LED, 0)
 {
-    motor_reseted = true; //debug
+    motor_reseted = true;
     set_ustep(EIGHTH_STEP);
+
     // Setup PWM
     step.period_us(1000000/(pps*ustep));
     step = 0.5;  //Duty cycle of 50%
     is_pwm_enabled = true;
 
-    //suspend_motors();
-    
     // Setup Interrupts
     for(int i = 0; i < NB_MOTOR; i += 1) {
         limitsw[i].fall(callback(this,&board::limitsw_isr));
@@ -104,23 +103,21 @@ enum UART_CMD board::home_motors(void)
         motor_reseted = false;
     }    
 
-    printf("\nTARGET=%x\n",*((int*)&target_pos));
     // ALgorithm for homing motors
     for(unsigned i = 0; i < NB_MOTOR; i += 1) {
 
         float dz = target_pos - motor_pos[i];
-        if (dz > 0) dir = DIR_UP;
-        else dir = DIR_DOWN;
+        if (dz > 0){
+            dir = DIR_UP;
+        }
+        else{
+            dir = DIR_DOWN;
+        }
 
         float nb_step = dz * ((float)NB_STEP_PER_REVOLUTION * ustep / \
                          ((float)GEAR_RATIO * (float)DISTANCE_M4_SCREW_PER_REVOLUTION_MM));
 
-        step_limit = (unsigned)nb_step;
-
-        printf("\nMOT%d\n",i);
-        printf("POS=%x\n",*((int*)&motor_pos[i]));
-        printf("DZ=%x\n",*((int*)&dz));
-        printf("NB_STEP=%ld\n",step_limit);
+        step_limit = (unsigned)abs(nb_step);
 
         if(step_limit >= HOME_STEP_TRESHOLD*((unsigned)ustep)){
             
@@ -145,6 +142,7 @@ enum UART_CMD board::home_motors(void)
 
 enum UART_CMD board::reset_motors(void)
 {
+    
     dir = DIR_DOWN; 
     enable_all_motors(true);
     enable_pwm(true);
@@ -154,7 +152,7 @@ enum UART_CMD board::reset_motors(void)
     }
 
     enable_all_motors(false);
-
+    
     // Reset driver
     rst_n = 0;
     int last_step_cntr = step_cntr;
@@ -163,7 +161,7 @@ enum UART_CMD board::reset_motors(void)
     rst_n = 1;
 
     enable_pwm(false);
-
+    
     for(unsigned i=0; i<NB_MOTOR; i+=1)
         motor_pos[i] = 0.0f;
 

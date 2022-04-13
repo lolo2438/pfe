@@ -38,7 +38,6 @@ void board::rx_isr(void)
             break;
         default:
             break;
-            // Send error to printer...
         }
         
     } else if(!rx_done) {

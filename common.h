@@ -12,14 +12,14 @@
 
 #define DISTANCE_M4_SCREW_PER_REVOLUTION_MM 0.7f
 
-#define Z_OFFSET_HOME_MM 0.2f;
+#define Z_OFFSET_HOME_MM 0.0f
 
 // Value calculated for tolerance of 0.041176 mm
 #define HOME_STEP_TRESHOLD 10 
 
 #define BAUD_RATE 9600
 
-// NOTE: EN CE MOMENT ON PARLE DE LA ROUE ET NON DU BED
+
 enum motor_dir {DIR_UP = 0, DIR_DOWN = 1};
 
 

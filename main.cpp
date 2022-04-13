@@ -1,9 +1,5 @@
 #include "board.h"
 
-//BufferedSerial pc(USBTX,USBRX,9600);    //USBRX=PA_15, USB_TX=PA_2, no conflict
-
-//TODO: Add timer to put motors in sleep state
-
 board b;
 
 struct uart_frame d = {};
@@ -26,7 +22,6 @@ int main()
         case DATA3:
             pos = *(reinterpret_cast<float*>(d.data));
             b.set_motor_pos(d.cmd - DATA0, pos);
-            //printf("%x\n", *((int*)&pos));
             reply = ACK;
             break;
         case HOME:
